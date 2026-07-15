@@ -1,0 +1,50 @@
+# =============================================================
+# .github/CODEOWNERS
+# Defines required reviewers for security-sensitive paths.
+# All patterns require approval from at least one listed owner
+# before a PR can be merged into main or staging.
+#
+# Format: <pattern> <@github-username-or-team>
+# =============================================================
+
+# ── Default: all changes need one engineering review ──────────
+*  @critterverse/engineering
+
+# ── Schema migrations: require architect sign-off ─────────────
+# Any migration touching RLS, grants, or schema structure
+# must be reviewed by the lead architect.
+migrations/  @critterverse/architects
+
+# ── Security-critical migrations: require dual review ─────────
+migrations/009_rls.sql               @critterverse/architects @critterverse/security
+migrations/013_function_security.sql @critterverse/architects @critterverse/security
+migrations/014_rls_addendum.sql      @critterverse/architects @critterverse/security
+
+# ── Authentication and identity: require security review ──────
+supabase/functions/identity/         @critterverse/security
+supabase/functions/_shared/clients.ts @critterverse/security
+supabase/functions/_shared/hmac.ts   @critterverse/security
+
+# ── Trust chain functions: require architect review ───────────
+# These functions mutate the append-only trust ledger.
+supabase/functions/trust/            @critterverse/architects
+
+# ── Bridge: require legal/compliance awareness ────────────────
+# The bridge crosses the PatchWork/Critterverse legal boundary.
+supabase/functions/bridge/           @critterverse/architects @critterverse/legal
+migrations/006_bridge.sql            @critterverse/architects @critterverse/legal
+
+# ── CI/CD workflows: require DevOps review ────────────────────
+.github/workflows/                   @critterverse/devops
+
+# ── Secret management: require security review ────────────────
+scripts/rotate-secrets.sh            @critterverse/security
+.env.example                         @critterverse/security
+
+# ── Documentation: require review from any owner ─────────────
+docs/                                @critterverse/engineering
+SECURITY.md                          @critterverse/security @critterverse/architects
+README.md                            @critterverse/engineering
+
+# ── This file itself: any change requires two approvals ───────
+.github/CODEOWNERS                   @critterverse/architects @critterverse/security

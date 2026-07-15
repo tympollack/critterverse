@@ -1,0 +1,124 @@
+name: Deploy
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'          # production: v1.2.3
+      - 'v[0-9]+.[0-9]+.[0-9]+-staging'  # staging:    v1.2.3-staging
+
+jobs:
+  # ── Gate: run full test suite first ─────────────────────────
+  test:
+    name: Pre-deploy Test Gate
+    uses: ./.github/workflows/test.yml
+
+  # ── Staging deploy ────────────────────────────────────────
+  deploy-staging:
+    name: Deploy → Staging
+    needs: test
+    runs-on: ubuntu-latest
+    environment: staging
+    if: endsWith(github.ref_name, '-staging')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy to staging
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          bash scripts/deploy.sh \
+            --project-ref ${{ secrets.STAGING_PROJECT_REF }} \
+            --env staging
+
+      - name: Post-deploy health check
+        env:
+          STAGING_URL:          ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_INTERNAL_KEY: ${{ secrets.STAGING_INTERNAL_FUNCTION_KEY }}
+        run: |
+          STATUS=$(curl -sf \
+            -H "X-Internal-Key: ${STAGING_INTERNAL_KEY}" \
+            "${STAGING_URL}/functions/v1/admin/health-check" | jq -r '.overall')
+          echo "Health check: $STATUS"
+          [ "$STATUS" = "ok" ] || [ "$STATUS" = "warn" ] || \
+            (echo "Health check failed: $STATUS" && exit 1)
+
+      - name: Notify staging deploy
+        if: always()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "*Critterverse Staging Deploy*: `${{ github.ref_name }}` — ${{ job.status }}\n${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        continue-on-error: true
+
+  # ── Production deploy ────────────────────────────────────
+  deploy-production:
+    name: Deploy → Production
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production    # requires manual approval gate in GitHub
+    if: "!endsWith(github.ref_name, '-staging')"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy to production
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          bash scripts/deploy.sh \
+            --project-ref ${{ secrets.PRODUCTION_PROJECT_REF }} \
+            --env production
+        # Note: deploy.sh production gate is bypassed in CI via env var
+        # (the GitHub environment approval is the human gate)
+
+      - name: Post-deploy health check
+        env:
+          PRODUCTION_URL:          ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          PRODUCTION_INTERNAL_KEY: ${{ secrets.PRODUCTION_INTERNAL_FUNCTION_KEY }}
+        run: |
+          STATUS=$(curl -sf \
+            -H "X-Internal-Key: ${PRODUCTION_INTERNAL_KEY}" \
+            "${PRODUCTION_URL}/functions/v1/admin/health-check" | jq -r '.overall')
+          echo "Health check: $STATUS"
+          [ "$STATUS" = "ok" ] || \
+            (echo "Production health check failed: $STATUS" && exit 1)
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+
+      - name: Notify production deploy
+        if: always()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "*Critterverse Production Deploy*: `${{ github.ref_name }}` — ${{ job.status }}\n${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        continue-on-error: true
+
+# ── Required GitHub repository secrets ────────────────────────
+# SUPABASE_ACCESS_TOKEN           Personal access token for CLI auth
+# STAGING_PROJECT_REF             Supabase project ref for staging
+# PRODUCTION_PROJECT_REF          Supabase project ref for production
+# STAGING_SUPABASE_URL            https://<ref>.supabase.co
+# PRODUCTION_SUPABASE_URL         https://<ref>.supabase.co
+# STAGING_INTERNAL_FUNCTION_KEY   Matches INTERNAL_FUNCTION_KEY secret in staging
+# PRODUCTION_INTERNAL_FUNCTION_KEY Matches INTERNAL_FUNCTION_KEY secret in production
+# SLACK_WEBHOOK_URL               (optional) for deploy notifications

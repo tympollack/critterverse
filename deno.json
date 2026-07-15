@@ -1,0 +1,28 @@
+{
+  "tasks": {
+    "test":              "deno test supabase/tests/ --allow-net --allow-env --no-check",
+    "test:pipeline":     "deno test supabase/tests/pipeline.test.ts    --allow-net --allow-env --no-check",
+    "test:council":      "deno test supabase/tests/council.test.ts     --allow-net --allow-env --no-check",
+    "test:bridge":       "deno test supabase/tests/bridge.test.ts      --allow-net --allow-env --no-check",
+    "test:trust":        "deno test supabase/tests/trust.test.ts       --allow-net --allow-env --no-check",
+    "test:rls":          "deno test supabase/tests/rls.test.ts         --allow-net --allow-env --no-check",
+    "test:integration":  "deno test supabase/tests/integration.test.ts --allow-net --allow-env --no-check",
+    "test:profile":      "deno test supabase/tests/profile.test.ts     --allow-net --allow-env --no-check",
+    "test:analytics":    "deno test supabase/tests/analytics.test.ts   --allow-net --allow-env --no-check",
+    "test:coverage":     "deno test supabase/tests/ --allow-net --allow-env --no-check --coverage=coverage && deno coverage coverage"
+  },
+  "imports": {
+    "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.39.3"
+  },
+  "lint": {
+    "rules": {
+      "exclude": ["no-explicit-any"]
+    }
+  },
+  "fmt": {
+    "useTabs":     false,
+    "lineWidth":   100,
+    "indentWidth": 2,
+    "singleQuote": true
+  }
+}

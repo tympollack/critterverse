@@ -1,0 +1,102 @@
+# ============================================================
+# supabase/config.toml
+# Critterverse Supabase project configuration.
+# ============================================================
+
+[project]
+project_id = "critterverse"
+
+[api]
+port     = 54321
+# CRITICAL: Only critterverse schema is exposed via PostgREST.
+# patchwork_bridge schema is service_role only — never expose it here.
+schemas  = ["critterverse"]
+extra_search_path = ["extensions"]
+max_rows = 1000
+
+[auth]
+site_url              = "https://app.critterverse.xyz"
+additional_redirect_urls = []
+jwt_expiry            = 3600
+# SunShade is the sole Identity Provider.
+# GoTrue validates tokens only — it does not issue them.
+# CRITICAL: All native auth providers below are disabled.
+enable_signup         = false
+
+[auth.email]
+enable_signup         = false
+enable_confirmations  = false
+
+[auth.sms]
+enable_signup         = false
+
+# External OAuth providers — all disabled.
+# Identity is managed exclusively by SunShade.
+[auth.external.google]
+enabled = false
+[auth.external.github]
+enabled = false
+[auth.external.apple]
+enabled = false
+
+[db]
+port           = 54322
+shadow_port    = 54320
+major_version  = 15
+
+[studio]
+port           = 54323
+
+[inbucket]
+port           = 54324
+
+[storage]
+file_size_limit = "50MiB"
+
+# CRON schedules for Edge Functions
+# Supabase CRON uses pg_cron; functions are called via pg_net (http).
+# These are defined as SQL in a separate migration or via the dashboard.
+#
+# [cron."council/resolve"]
+#   schedule = "*/30 * * * *"     # every 30 minutes
+#   url      = "/functions/v1/council/resolve"
+#
+# [cron."bridge/retry-pings"]
+#   schedule = "*/15 * * * *"     # every 15 minutes
+#   url      = "/functions/v1/bridge/retry-pings"
+#
+# [cron."sync/sunshade-mirror"]
+#   schedule = "0 0 * * *"        # nightly at 00:00 UTC
+#   url      = "/functions/v1/sync/sunshade-mirror"
+#
+# [cron."sync/bounty-maintenance"]
+#   schedule = "0 */6 * * *"      # every 6 hours
+#   url      = "/functions/v1/sync/bounty-maintenance"
+
+[functions.env]
+# All secrets set via `supabase secrets set` — never committed to source control.
+#
+# Required secrets (set before first deploy):
+#
+#   SUPABASE_URL                    (auto-set by Supabase)
+#   SUPABASE_ANON_KEY               (auto-set by Supabase)
+#   SUPABASE_SERVICE_ROLE_KEY       (auto-set by Supabase)
+#
+#   CRITTERVERSE_BOOTSTRAP_SECRET   Pre-shared secret for SunShade → identity/bootstrap
+#   TRUST_CHAIN_GENESIS_HASH        Well-known genesis anchor for trust chains
+#   INTERNAL_FUNCTION_KEY           Inter-function auth for CRON + pipeline triggers
+#
+#   ZKP_PIPELINE_ENDPOINT           External ZKP validation service URL
+#   ZKP_PIPELINE_API_KEY            API key for ZKP service
+#
+#   VISION_MODEL_ENDPOINT           Lightweight AI vision model URL
+#   VISION_MODEL_API_KEY            API key for vision model
+#   PHASH_SERVICE_ENDPOINT          Perceptual hash microservice URL
+#
+#   PATCHWORK_WEBHOOK_SECRET        HMAC-SHA256 shared secret (PatchWork → inbound)
+#   PATCHWORK_AUDIT_WEBHOOK_URL     PatchWork's audit confirmation endpoint
+#   CRITTERVERSE_OUTBOUND_SECRET    HMAC-SHA256 shared secret (outbound → PatchWork)
+#   PATCHWORK_PUBLIC_API            PatchWork's public DID profile API base URL
+#
+#   SUNSHADE_GRAPH_API              SunShade trust graph delta endpoint
+#   SUNSHADE_API_KEY                SunShade API key for graph sync

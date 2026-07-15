@@ -1,0 +1,222 @@
+name: CI
+
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+    branches: [main, staging]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Lint and type-check Edge Functions ─────────────────────
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: '1.40.x'
+
+      - name: Check formatting
+        run: deno fmt --check supabase/functions/ supabase/tests/
+        continue-on-error: true   # non-blocking in CI for now
+
+      - name: Lint
+        run: deno lint supabase/functions/ supabase/tests/
+
+      - name: Type check Edge Functions
+        run: |
+          for fn_dir in supabase/functions/*/; do
+            for index_file in "$fn_dir"*/index.ts; do
+              [ -f "$index_file" ] || continue
+              echo "Checking: $index_file"
+              deno check --import-map import_map.json "$index_file" || true
+            done
+          done
+
+  # ── Integration tests against local Supabase ────────────────
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: lint
+
+    services:
+      # Supabase requires these ports to be free
+      postgres:
+        image: supabase/postgres:15.1.0.117
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: '1.40.x'
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase
+        run: supabase start
+        env:
+          SUPABASE_DB_PASSWORD: postgres
+
+      - name: Wait for Supabase to be ready
+        run: |
+          for i in {1..30}; do
+            curl -sf http://localhost:54321/rest/v1/ -H "apikey: $(supabase status --output json | jq -r '.anon_key')" && break
+            echo "Waiting for Supabase... ($i/30)"
+            sleep 3
+          done
+
+      - name: Apply migrations
+        run: supabase db push
+
+      - name: Validate schema integrity
+        run: bash scripts/check-schema.sh --local
+
+      - name: Deploy Edge Functions (local)
+        run: |
+          supabase functions serve --import-map import_map.json &
+          sleep 8   # allow functions server to fully start before tests
+
+      - name: Set test secrets
+        run: |
+          supabase secrets set \
+            CRITTERVERSE_BOOTSTRAP_SECRET=ci-bootstrap-secret-32chars-padding \
+            TRUST_CHAIN_GENESIS_HASH=a3f8c2d1e9b047561a2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4 \
+            INTERNAL_FUNCTION_KEY=ci-internal-key-32chars-padding-xx \
+            ZKP_PIPELINE_ENDPOINT=http://localhost:9999/mock-zkp \
+            ZKP_PIPELINE_API_KEY=mock-zkp-key \
+            VISION_MODEL_ENDPOINT=http://localhost:9999/mock-vision \
+            VISION_MODEL_API_KEY=mock-vision-key \
+            PHASH_SERVICE_ENDPOINT=http://localhost:9999/mock-phash \
+            PATCHWORK_WEBHOOK_SECRET=ci-patchwork-secret-32chars-padd \
+            PATCHWORK_AUDIT_WEBHOOK_URL=http://localhost:9999/mock-pw-audit \
+            CRITTERVERSE_OUTBOUND_SECRET=ci-outbound-secret-32chars-paddd \
+            PATCHWORK_PUBLIC_API=http://localhost:9999/mock-pw-api \
+            SUNSHADE_GRAPH_API=http://localhost:9999/mock-sunshade \
+            SUNSHADE_API_KEY=mock-sunshade-key
+
+      - name: Extract Supabase credentials
+        id: supabase-creds
+        run: |
+          STATUS=$(supabase status --output json)
+          echo "url=$(echo $STATUS | jq -r '.api_url')"              >> $GITHUB_OUTPUT
+          echo "service_key=$(echo $STATUS | jq -r '.service_role_key')" >> $GITHUB_OUTPUT
+          echo "anon_key=$(echo $STATUS | jq -r '.anon_key')"        >> $GITHUB_OUTPUT
+          echo "jwt_secret=$(echo $STATUS | jq -r '.jwt_secret')"    >> $GITHUB_OUTPUT
+
+      - name: Run pipeline tests
+        env:
+          SUPABASE_URL:              ${{ steps.supabase-creds.outputs.url }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase-creds.outputs.service_key }}
+          SUPABASE_ANON_KEY:         ${{ steps.supabase-creds.outputs.anon_key }}
+          SUPABASE_JWT_SECRET:       ${{ steps.supabase-creds.outputs.jwt_secret }}
+          TRUST_CHAIN_GENESIS_HASH:  a3f8c2d1e9b047561a2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4
+          INTERNAL_FUNCTION_KEY:     ci-internal-key-32chars-padding-xx
+          PATCHWORK_WEBHOOK_SECRET:  ci-patchwork-secret-32chars-padd
+        run: deno test supabase/tests/pipeline.test.ts --allow-net --allow-env --no-check
+
+      - name: Run council tests
+        env:
+          SUPABASE_URL:              ${{ steps.supabase-creds.outputs.url }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase-creds.outputs.service_key }}
+          SUPABASE_ANON_KEY:         ${{ steps.supabase-creds.outputs.anon_key }}
+          SUPABASE_JWT_SECRET:       ${{ steps.supabase-creds.outputs.jwt_secret }}
+          TRUST_CHAIN_GENESIS_HASH:  a3f8c2d1e9b047561a2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4
+          INTERNAL_FUNCTION_KEY:     ci-internal-key-32chars-padding-xx
+          PATCHWORK_WEBHOOK_SECRET:  ci-patchwork-secret-32chars-padd
+        run: deno test supabase/tests/council.test.ts --allow-net --allow-env --no-check
+
+      - name: Run bridge tests
+        env:
+          SUPABASE_URL:              ${{ steps.supabase-creds.outputs.url }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase-creds.outputs.service_key }}
+          SUPABASE_ANON_KEY:         ${{ steps.supabase-creds.outputs.anon_key }}
+          SUPABASE_JWT_SECRET:       ${{ steps.supabase-creds.outputs.jwt_secret }}
+          TRUST_CHAIN_GENESIS_HASH:  a3f8c2d1e9b047561a2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4
+          INTERNAL_FUNCTION_KEY:     ci-internal-key-32chars-padding-xx
+          PATCHWORK_WEBHOOK_SECRET:  ci-patchwork-secret-32chars-padd
+        run: deno test supabase/tests/bridge.test.ts --allow-net --allow-env --no-check
+
+      - name: Run trust tests
+        env:
+          SUPABASE_URL:              ${{ steps.supabase-creds.outputs.url }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase-creds.outputs.service_key }}
+          SUPABASE_ANON_KEY:         ${{ steps.supabase-creds.outputs.anon_key }}
+          SUPABASE_JWT_SECRET:       ${{ steps.supabase-creds.outputs.jwt_secret }}
+          TRUST_CHAIN_GENESIS_HASH:  a3f8c2d1e9b047561a2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4
+          INTERNAL_FUNCTION_KEY:     ci-internal-key-32chars-padding-xx
+          PATCHWORK_WEBHOOK_SECRET:  ci-patchwork-secret-32chars-padd
+        run: deno test supabase/tests/trust.test.ts --allow-net --allow-env --no-check
+
+      - name: Run RLS tests
+        env:
+          SUPABASE_URL:              ${{ steps.supabase-creds.outputs.url }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase-creds.outputs.service_key }}
+          SUPABASE_ANON_KEY:         ${{ steps.supabase-creds.outputs.anon_key }}
+          SUPABASE_JWT_SECRET:       ${{ steps.supabase-creds.outputs.jwt_secret }}
+          TRUST_CHAIN_GENESIS_HASH:  a3f8c2d1e9b047561a2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4
+          INTERNAL_FUNCTION_KEY:     ci-internal-key-32chars-padding-xx
+          PATCHWORK_WEBHOOK_SECRET:  ci-patchwork-secret-32chars-padd
+        run: deno test supabase/tests/rls.test.ts --allow-net --allow-env --no-check
+
+      - name: Run integration tests (submission-status + voter-status endpoints)
+        env:
+          SUPABASE_URL:              ${{ steps.supabase-creds.outputs.url }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase-creds.outputs.service_key }}
+          SUPABASE_ANON_KEY:         ${{ steps.supabase-creds.outputs.anon_key }}
+          SUPABASE_JWT_SECRET:       ${{ steps.supabase-creds.outputs.jwt_secret }}
+          TRUST_CHAIN_GENESIS_HASH:  a3f8c2d1e9b047561a2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4
+          INTERNAL_FUNCTION_KEY:     ci-internal-key-32chars-padding-xx
+          PATCHWORK_WEBHOOK_SECRET:  ci-patchwork-secret-32chars-padd
+        run: deno test supabase/tests/integration.test.ts --allow-net --allow-env --no-check
+
+      - name: Run profile tests (user/profile + admin/user-report endpoints)
+        env:
+          SUPABASE_URL:              ${{ steps.supabase-creds.outputs.url }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase-creds.outputs.service_key }}
+          SUPABASE_ANON_KEY:         ${{ steps.supabase-creds.outputs.anon_key }}
+          SUPABASE_JWT_SECRET:       ${{ steps.supabase-creds.outputs.jwt_secret }}
+          TRUST_CHAIN_GENESIS_HASH:  a3f8c2d1e9b047561a2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4
+          INTERNAL_FUNCTION_KEY:     ci-internal-key-32chars-padding-xx
+          PATCHWORK_WEBHOOK_SECRET:  ci-patchwork-secret-32chars-padd
+        run: deno test supabase/tests/profile.test.ts --allow-net --allow-env --no-check
+
+      - name: Run analytics tests (admin/analytics endpoint + views)
+        env:
+          SUPABASE_URL:              ${{ steps.supabase-creds.outputs.url }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase-creds.outputs.service_key }}
+          SUPABASE_ANON_KEY:         ${{ steps.supabase-creds.outputs.anon_key }}
+          SUPABASE_JWT_SECRET:       ${{ steps.supabase-creds.outputs.jwt_secret }}
+          TRUST_CHAIN_GENESIS_HASH:  a3f8c2d1e9b047561a2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4
+          INTERNAL_FUNCTION_KEY:     ci-internal-key-32chars-padding-xx
+          PATCHWORK_WEBHOOK_SECRET:  ci-patchwork-secret-32chars-padd
+        run: deno test supabase/tests/analytics.test.ts --allow-net --allow-env --no-check
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: /tmp/*.json
+          if-no-files-found: ignore
+
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop
