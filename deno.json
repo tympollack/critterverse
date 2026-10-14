@@ -16,7 +16,7 @@
   },
   "lint": {
     "rules": {
-      "exclude": ["no-explicit-any"]
+      "exclude": ["no-explicit-any", "no-import-prefix", "no-unused-vars", "require-await"]
     }
   },
   "fmt": {

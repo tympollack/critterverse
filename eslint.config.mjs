@@ -12,6 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Keep the Next.js (Node) linter scoped to the frontend. Deno/Supabase backend
+    // code is linted/tested by Deno and has its own config.
+    "supabase/**",
+    "scripts/**",
+    "docs/**",
+    ".github/**",
   ]),
 ]);
 
