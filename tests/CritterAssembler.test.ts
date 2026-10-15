@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   CritterAssembler,
   AFFINITY_COLOR_SCHEMES,
+  DEFAULT_CRITTER_DNA,
 } from '../src/engine/CritterAssembler';
 import {
   CritterDNA,
@@ -9,6 +10,27 @@ import {
 } from '../src/types/critter';
 
 describe('CritterAssembler Engine', () => {
+  describe('getDefaultDNA', () => {
+    it('returns a deterministic initial DNA to prevent hydration mismatches', () => {
+      const dna1 = CritterAssembler.getDefaultDNA('fire');
+      const dna2 = CritterAssembler.getDefaultDNA('fire');
+
+      expect(dna1).toEqual(dna2);
+      expect(dna1.id).toBe(DEFAULT_CRITTER_DNA.id);
+      expect(dna1.speciesName).toBe('Pyrofang');
+      expect(dna1.affinity).toBe('fire');
+      expect(dna1.stats.hp).toBe(85);
+      expect(dna1.bodyVariant).toBe('chubby');
+      expect(dna1.headVariant).toBe('round');
+    });
+
+    it('returns deterministic DNA for non-fire affinities', () => {
+      const waterDNA = CritterAssembler.getDefaultDNA('water');
+      expect(waterDNA.affinity).toBe('water');
+      expect(waterDNA.speciesName).toBe('Aquafang');
+    });
+  });
+
   describe('generateRandomDNA', () => {
     it('creates a complete DNA manifest with valid attributes', () => {
       const dna = CritterAssembler.generateRandomDNA('fire');
@@ -124,6 +146,7 @@ describe('CritterAssembler Engine', () => {
         quadraticCurveTo: vi.fn(),
         arc: vi.fn(),
         ellipse: vi.fn(),
+        rect: vi.fn(),
         closePath: vi.fn(),
         fill: vi.fn(),
         stroke: vi.fn(),
@@ -139,6 +162,7 @@ describe('CritterAssembler Engine', () => {
         fillStyle: '',
         strokeStyle: '',
         lineWidth: 1,
+        lineCap: 'round',
       } as unknown as CanvasRenderingContext2D;
 
       expect(() => {
@@ -147,6 +171,108 @@ describe('CritterAssembler Engine', () => {
 
       expect(mockCtx.beginPath).toHaveBeenCalled();
       expect(mockCtx.fill).toHaveBeenCalled();
+    });
+
+    it('renders all distinct body, head, limb, wing, horn, tail, eye, and mouth variants without errors', () => {
+      const bodyVariants = ['chubby', 'beast', 'serpentine', 'compact'];
+      const headVariants = ['round', 'draconic', 'feline', 'avian'];
+      const limbVariants = ['paws', 'claws', 'hooves', 'fins'];
+      const wingVariants = ['dragon', 'feathered', 'bat'];
+      const hornVariants = ['curved', 'ram', 'crown'];
+      const tailVariants = ['fluffy', 'whip', 'demon'];
+      const eyeVariants = ['focused', 'wide', 'mystic', 'cute'];
+      const mouthVariants = ['fang', 'smile', 'neutral', 'beak'];
+
+      const mockCtx = {
+        save: vi.fn(),
+        restore: vi.fn(),
+        translate: vi.fn(),
+        rotate: vi.fn(),
+        scale: vi.fn(),
+        beginPath: vi.fn(),
+        moveTo: vi.fn(),
+        lineTo: vi.fn(),
+        bezierCurveTo: vi.fn(),
+        quadraticCurveTo: vi.fn(),
+        arc: vi.fn(),
+        ellipse: vi.fn(),
+        rect: vi.fn(),
+        closePath: vi.fn(),
+        fill: vi.fn(),
+        stroke: vi.fn(),
+        createRadialGradient: vi.fn().mockReturnValue({ addColorStop: vi.fn() }),
+        fillStyle: '',
+        strokeStyle: '',
+        lineWidth: 1,
+        lineCap: 'round',
+      } as unknown as CanvasRenderingContext2D;
+
+      // Verify each variant attaches properly to parts and renders cleanly
+      for (const b of bodyVariants) {
+        const dna: CritterDNA = { ...DEFAULT_CRITTER_DNA, bodyVariant: b };
+        const manifest = CritterAssembler.assembleManifest(dna);
+        const bodyPart = manifest.parts.find((p) => p.type === 'body');
+        expect(bodyPart?.variant).toBe(b);
+        expect(() => CritterAssembler.renderCritter(mockCtx, manifest, 100)).not.toThrow();
+      }
+
+      for (const h of headVariants) {
+        const dna: CritterDNA = { ...DEFAULT_CRITTER_DNA, headVariant: h };
+        const manifest = CritterAssembler.assembleManifest(dna);
+        const headPart = manifest.parts.find((p) => p.type === 'head');
+        expect(headPart?.variant).toBe(h);
+        expect(() => CritterAssembler.renderCritter(mockCtx, manifest, 100)).not.toThrow();
+      }
+
+      for (const l of limbVariants) {
+        const dna: CritterDNA = { ...DEFAULT_CRITTER_DNA, limbsVariant: l };
+        const manifest = CritterAssembler.assembleManifest(dna);
+        const legPart = manifest.parts.find((p) => p.id === 'leg-left');
+        const armPart = manifest.parts.find((p) => p.id === 'arm-left');
+        expect(legPart?.variant).toBe(l);
+        expect(armPart?.variant).toBe(l);
+        expect(() => CritterAssembler.renderCritter(mockCtx, manifest, 100)).not.toThrow();
+      }
+
+      for (const w of wingVariants) {
+        const dna: CritterDNA = { ...DEFAULT_CRITTER_DNA, wingsVariant: w };
+        const manifest = CritterAssembler.assembleManifest(dna);
+        const wingPart = manifest.parts.find((p) => p.id === 'wing-left');
+        expect(wingPart?.variant).toBe(w);
+        expect(() => CritterAssembler.renderCritter(mockCtx, manifest, 100)).not.toThrow();
+      }
+
+      for (const hr of hornVariants) {
+        const dna: CritterDNA = { ...DEFAULT_CRITTER_DNA, hornsVariant: hr };
+        const manifest = CritterAssembler.assembleManifest(dna);
+        const hornPart = manifest.parts.find((p) => p.type === 'horns');
+        expect(hornPart?.variant).toBe(hr);
+        expect(() => CritterAssembler.renderCritter(mockCtx, manifest, 100)).not.toThrow();
+      }
+
+      for (const t of tailVariants) {
+        const dna: CritterDNA = { ...DEFAULT_CRITTER_DNA, tailVariant: t };
+        const manifest = CritterAssembler.assembleManifest(dna);
+        const tailPart = manifest.parts.find((p) => p.type === 'tail');
+        expect(tailPart?.variant).toBe(t);
+        expect(() => CritterAssembler.renderCritter(mockCtx, manifest, 100)).not.toThrow();
+      }
+
+      for (const e of eyeVariants) {
+        const dna: CritterDNA = { ...DEFAULT_CRITTER_DNA, eyesVariant: e };
+        const manifest = CritterAssembler.assembleManifest(dna);
+        const eyePart = manifest.parts.find((p) => p.type === 'eyes');
+        expect(eyePart?.variant).toBe(e);
+        expect(() => CritterAssembler.renderCritter(mockCtx, manifest, 100)).not.toThrow();
+      }
+
+      for (const m of mouthVariants) {
+        const dna: CritterDNA = { ...DEFAULT_CRITTER_DNA, mouthVariant: m };
+        const manifest = CritterAssembler.assembleManifest(dna);
+        const mouthPart = manifest.parts.find((p) => p.type === 'mouth');
+        expect(mouthPart?.variant).toBe(m);
+        expect(() => CritterAssembler.renderCritter(mockCtx, manifest, 100)).not.toThrow();
+      }
     });
   });
 

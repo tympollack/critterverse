@@ -1,14 +1,14 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   CritterDNA,
   ElementalAffinity,
-  CritterStats,
 } from '../types/critter';
 import {
   CritterAssembler,
   AFFINITY_COLOR_SCHEMES,
+  DEFAULT_CRITTER_DNA,
 } from '../engine/CritterAssembler';
 import {
   Flame,
@@ -60,16 +60,28 @@ const AFFINITY_CONFIG: Record<
   },
 };
 
-export const CritterViewport: React.FC = () => {
+export interface CritterViewportProps {
+  initialCritter?: CritterDNA;
+}
+
+export const CritterViewport: React.FC<CritterViewportProps> = ({
+  initialCritter = DEFAULT_CRITTER_DNA,
+}) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animFrameRef = useRef<number | null>(null);
 
-  const [activeCritter, setActiveCritter] = useState<CritterDNA>(() =>
-    CritterAssembler.generateRandomDNA('fire')
-  );
+  const [activeCritter, setActiveCritter] = useState<CritterDNA>(initialCritter);
   const [parentCritter, setParentCritter] = useState<CritterDNA | null>(null);
   const [exportedImage, setExportedImage] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+
+  // Memoize assembled manifest across DNA changes to avoid rebuilding 60fps
+  const manifest = useMemo(() => {
+    return CritterAssembler.assembleManifest(activeCritter, {
+      x: 240, // canvas.width / 2 (480 / 2)
+      y: 230, // canvas.height / 2 + 10 (440 / 2 + 10)
+    });
+  }, [activeCritter]);
 
   // Initialize and run the 60fps canvas animation loop
   useEffect(() => {
@@ -79,7 +91,7 @@ export const CritterViewport: React.FC = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let startTime = performance.now();
+    const startTime = performance.now();
 
     const render = (now: number) => {
       const elapsed = now - startTime;
@@ -118,12 +130,7 @@ export const CritterViewport: React.FC = () => {
         ctx.stroke();
       }
 
-      // Assemble manifest and render
-      const manifest = CritterAssembler.assembleManifest(activeCritter, {
-        x: canvas.width / 2,
-        y: canvas.height / 2 + 10,
-      });
-
+      // Render cached manifest
       CritterAssembler.renderCritter(ctx, manifest, elapsed);
 
       animFrameRef.current = requestAnimationFrame(render);
@@ -136,12 +143,13 @@ export const CritterViewport: React.FC = () => {
         cancelAnimationFrame(animFrameRef.current);
       }
     };
-  }, [activeCritter]);
+  }, [manifest]);
 
-  // Handle randomize
+  // Handle randomize: reset parentCritter so offspring genealogy is clean
   const handleRandomize = useCallback((affinity?: ElementalAffinity) => {
     const nextDNA = CritterAssembler.generateRandomDNA(affinity ?? activeCritter.affinity);
     setActiveCritter(nextDNA);
+    setParentCritter(null);
   }, [activeCritter.affinity]);
 
   // Handle affinity shift
@@ -152,13 +160,13 @@ export const CritterViewport: React.FC = () => {
     }));
   }, []);
 
-  // Handle DNA Splicing
+  // Handle DNA Splicing: mate with a fresh wild critter, preserve previous active as parent anchor
   const handleSplice = useCallback(() => {
-    const mate = parentCritter ?? CritterAssembler.generateRandomDNA();
+    const mate = CritterAssembler.generateRandomDNA();
     const hybrid = CritterAssembler.spliceDNA(activeCritter, mate);
     setParentCritter(activeCritter);
     setActiveCritter(hybrid);
-  }, [activeCritter, parentCritter]);
+  }, [activeCritter]);
 
   // Handle Export to 2D card thumbnail
   const handleExportCard = useCallback(async () => {
@@ -179,7 +187,6 @@ export const CritterViewport: React.FC = () => {
     }
   }, [activeCritter]);
 
-  const affinityDetails = AFFINITY_CONFIG[activeCritter.affinity];
   const colorScheme = AFFINITY_COLOR_SCHEMES[activeCritter.affinity];
 
   return (
