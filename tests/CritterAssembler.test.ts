@@ -29,6 +29,17 @@ describe('CritterAssembler Engine', () => {
       expect(waterDNA.affinity).toBe('water');
       expect(waterDNA.speciesName).toBe('Aquafang');
     });
+
+    it('returns an isolated copy of stats so mutating one default does not affect subsequent defaults', () => {
+      const dna1 = CritterAssembler.getDefaultDNA('fire');
+      dna1.stats.hp = 999;
+
+      const dna2 = CritterAssembler.getDefaultDNA('fire');
+      expect(dna2.stats.hp).toBe(85);
+
+      const waterDna = CritterAssembler.getDefaultDNA('water');
+      expect(waterDna.stats.hp).toBe(85);
+    });
   });
 
   describe('generateRandomDNA', () => {
@@ -126,6 +137,18 @@ describe('CritterAssembler Engine', () => {
       for (let i = 1; i < manifest.parts.length; i++) {
         expect(manifest.parts[i].zIndex).toBeGreaterThanOrEqual(manifest.parts[i - 1].zIndex);
       }
+    });
+
+    it('captures variants at assembly time so subsequent DNA mutations do not affect drawings', () => {
+      const dna = CritterAssembler.getDefaultDNA('fire');
+      dna.wingsVariant = 'bat';
+      const manifest = CritterAssembler.assembleManifest(dna);
+      const wingPart = manifest.parts.find((p) => p.id === 'wing-left')!;
+      expect(wingPart.variant).toBe('bat');
+
+      // Mutate DNA post-assembly
+      dna.wingsVariant = 'feathered';
+      expect(wingPart.variant).toBe('bat');
     });
 
     it('renders critter without error via renderCritter', () => {
@@ -274,40 +297,73 @@ describe('CritterAssembler Engine', () => {
         expect(() => CritterAssembler.renderCritter(mockCtx, manifest, 100)).not.toThrow();
       }
     });
+
+    it('applies anim.bob vertical translation in drawLeg to prevent leg detachment during idle bobbing', () => {
+      const dna = CritterAssembler.getDefaultDNA('fire');
+      const manifest = CritterAssembler.assembleManifest(dna);
+      const legPart = manifest.parts.find((p) => p.id === 'leg-left');
+      expect(legPart).toBeDefined();
+
+      const mockCtx = {
+        save: vi.fn(),
+        restore: vi.fn(),
+        translate: vi.fn(),
+        beginPath: vi.fn(),
+        ellipse: vi.fn(),
+        arc: vi.fn(),
+        fill: vi.fn(),
+        stroke: vi.fn(),
+      } as unknown as CanvasRenderingContext2D;
+
+      const anim = { bob: 8.5, breath: 0, sway: 0, flap: 0 };
+      legPart!.draw(mockCtx, legPart!.jointAnchor, 1.0, manifest.colors, anim);
+
+      // Verify translation included anim.bob
+      expect(mockCtx.translate).toHaveBeenCalledWith(
+        legPart!.jointAnchor.x,
+        legPart!.jointAnchor.y + 8.5
+      );
+    });
   });
 
   describe('exportToCardThumbnail', () => {
+    let mockContext: Record<string, any>;
+
     beforeEach(() => {
+      mockContext = {
+        save: vi.fn(),
+        restore: vi.fn(),
+        translate: vi.fn(),
+        rotate: vi.fn(),
+        scale: vi.fn(),
+        beginPath: vi.fn(),
+        moveTo: vi.fn(),
+        lineTo: vi.fn(),
+        bezierCurveTo: vi.fn(),
+        quadraticCurveTo: vi.fn(),
+        arc: vi.fn(),
+        ellipse: vi.fn(),
+        rect: vi.fn(),
+        clip: vi.fn(),
+        closePath: vi.fn(),
+        fill: vi.fn(),
+        stroke: vi.fn(),
+        fillRect: vi.fn(),
+        strokeRect: vi.fn(),
+        fillText: vi.fn(),
+        createRadialGradient: vi.fn().mockReturnValue({
+          addColorStop: vi.fn(),
+        }),
+        createLinearGradient: vi.fn().mockReturnValue({
+          addColorStop: vi.fn(),
+        }),
+      };
+
       // Mock global document if running in node environment
       const mockCanvas = {
         width: 400,
         height: 560,
-        getContext: vi.fn().mockReturnValue({
-          save: vi.fn(),
-          restore: vi.fn(),
-          translate: vi.fn(),
-          rotate: vi.fn(),
-          scale: vi.fn(),
-          beginPath: vi.fn(),
-          moveTo: vi.fn(),
-          lineTo: vi.fn(),
-          bezierCurveTo: vi.fn(),
-          quadraticCurveTo: vi.fn(),
-          arc: vi.fn(),
-          ellipse: vi.fn(),
-          closePath: vi.fn(),
-          fill: vi.fn(),
-          stroke: vi.fn(),
-          fillRect: vi.fn(),
-          strokeRect: vi.fn(),
-          fillText: vi.fn(),
-          createRadialGradient: vi.fn().mockReturnValue({
-            addColorStop: vi.fn(),
-          }),
-          createLinearGradient: vi.fn().mockReturnValue({
-            addColorStop: vi.fn(),
-          }),
-        }),
+        getContext: vi.fn().mockReturnValue(mockContext),
         toDataURL: vi.fn().mockReturnValue('data:image/png;base64,MOCK_IMAGE_DATA'),
       };
 
@@ -326,6 +382,13 @@ describe('CritterAssembler Engine', () => {
       const thumbnail = await CritterAssembler.exportToCardThumbnail(dna);
 
       expect(thumbnail).toMatch(/^data:image\/png;base64,/);
+    });
+
+    it('clips portrait frame to prevent creature drawing bleed outside card boundary', async () => {
+      const dna = CritterAssembler.getDefaultDNA('fire');
+      await CritterAssembler.exportToCardThumbnail(dna);
+
+      expect(mockContext.clip).toHaveBeenCalled();
     });
   });
 });
