@@ -218,39 +218,48 @@ export class CritterAssembler {
     const hornsSocket: JointPoint = { x: headSocket.x, y: headSocket.y - 32 * dna.scale };
     const tailSocket: JointPoint = { x: rootSocket.x - bodyW * 0.4, y: rootSocket.y + bodyH * 0.25 };
 
+    const wingsVariant = dna.wingsVariant;
+    const tailVariant = dna.tailVariant;
+    const limbsVariant = dna.limbsVariant;
+    const bodyVariant = dna.bodyVariant;
+    const headVariant = dna.headVariant;
+    const hornsVariant = dna.hornsVariant;
+    const eyesVariant = dna.eyesVariant;
+    const mouthVariant = dna.mouthVariant;
+
     // 1. Wings (Z-Index: 5, behind body)
-    if (dna.wingsVariant) {
+    if (wingsVariant) {
       parts.push({
         id: 'wing-left',
         type: 'wings',
         name: 'Left Wing',
-        variant: dna.wingsVariant,
+        variant: wingsVariant,
         zIndex: 5,
         jointAnchor: leftWingSocket,
-        draw: (ctx, origin, s, c, anim) => drawWing(ctx, origin, s, c, anim, dna.wingsVariant!, false),
+        draw: (ctx, origin, s, c, anim) => drawWing(ctx, origin, s, c, anim, wingsVariant, false),
       });
 
       parts.push({
         id: 'wing-right',
         type: 'wings',
         name: 'Right Wing',
-        variant: dna.wingsVariant,
+        variant: wingsVariant,
         zIndex: 5,
         jointAnchor: rightWingSocket,
-        draw: (ctx, origin, s, c, anim) => drawWing(ctx, origin, s, c, anim, dna.wingsVariant!, true),
+        draw: (ctx, origin, s, c, anim) => drawWing(ctx, origin, s, c, anim, wingsVariant, true),
       });
     }
 
     // 2. Tail (Z-Index: 8)
-    if (dna.tailVariant) {
+    if (tailVariant) {
       parts.push({
         id: 'tail',
         type: 'tail',
         name: 'Tail',
-        variant: dna.tailVariant,
+        variant: tailVariant,
         zIndex: 8,
         jointAnchor: tailSocket,
-        draw: (ctx, origin, s, c, anim) => drawTail(ctx, origin, s, c, anim, dna.tailVariant!),
+        draw: (ctx, origin, s, c, anim) => drawTail(ctx, origin, s, c, anim, tailVariant),
       });
     }
 
@@ -259,20 +268,20 @@ export class CritterAssembler {
       id: 'leg-left',
       type: 'limbs',
       name: 'Left Leg',
-      variant: dna.limbsVariant,
+      variant: limbsVariant,
       zIndex: 10,
       jointAnchor: leftLegSocket,
-      draw: (ctx, origin, s, c, anim) => drawLeg(ctx, origin, s, c, anim, dna.limbsVariant, false),
+      draw: (ctx, origin, s, c, anim) => drawLeg(ctx, origin, s, c, anim, limbsVariant, false),
     });
 
     parts.push({
       id: 'leg-right',
       type: 'limbs',
       name: 'Right Leg',
-      variant: dna.limbsVariant,
+      variant: limbsVariant,
       zIndex: 10,
       jointAnchor: rightLegSocket,
-      draw: (ctx, origin, s, c, anim) => drawLeg(ctx, origin, s, c, anim, dna.limbsVariant, true),
+      draw: (ctx, origin, s, c, anim) => drawLeg(ctx, origin, s, c, anim, limbsVariant, true),
     });
 
     // 4. Body Torso (Z-Index: 20)
@@ -280,10 +289,10 @@ export class CritterAssembler {
       id: 'body',
       type: 'body',
       name: 'Body Torso',
-      variant: dna.bodyVariant,
+      variant: bodyVariant,
       zIndex: 20,
       jointAnchor: rootSocket,
-      draw: (ctx, origin, s, c, anim) => drawBody(ctx, origin, s, c, anim, dna.bodyVariant),
+      draw: (ctx, origin, s, c, anim) => drawBody(ctx, origin, s, c, anim, bodyVariant),
     });
 
     // 5. Front Arms (Z-Index: 25)
@@ -291,20 +300,20 @@ export class CritterAssembler {
       id: 'arm-left',
       type: 'limbs',
       name: 'Left Arm',
-      variant: dna.limbsVariant,
+      variant: limbsVariant,
       zIndex: 25,
       jointAnchor: leftArmSocket,
-      draw: (ctx, origin, s, c, anim) => drawArm(ctx, origin, s, c, anim, dna.limbsVariant, false),
+      draw: (ctx, origin, s, c, anim) => drawArm(ctx, origin, s, c, anim, limbsVariant, false),
     });
 
     parts.push({
       id: 'arm-right',
       type: 'limbs',
       name: 'Right Arm',
-      variant: dna.limbsVariant,
+      variant: limbsVariant,
       zIndex: 25,
       jointAnchor: rightArmSocket,
-      draw: (ctx, origin, s, c, anim) => drawArm(ctx, origin, s, c, anim, dna.limbsVariant, true),
+      draw: (ctx, origin, s, c, anim) => drawArm(ctx, origin, s, c, anim, limbsVariant, true),
     });
 
     // 6. Head (Z-Index: 30)
@@ -312,22 +321,22 @@ export class CritterAssembler {
       id: 'head',
       type: 'head',
       name: 'Head',
-      variant: dna.headVariant,
+      variant: headVariant,
       zIndex: 30,
       jointAnchor: headSocket,
-      draw: (ctx, origin, s, c, anim) => drawHead(ctx, origin, s, c, anim, dna.headVariant),
+      draw: (ctx, origin, s, c, anim) => drawHead(ctx, origin, s, c, anim, headVariant),
     });
 
     // 7. Horns (Z-Index: 32)
-    if (dna.hornsVariant) {
+    if (hornsVariant) {
       parts.push({
         id: 'horns',
         type: 'horns',
         name: 'Horns',
-        variant: dna.hornsVariant,
+        variant: hornsVariant,
         zIndex: 32,
         jointAnchor: hornsSocket,
-        draw: (ctx, origin, s, c, anim) => drawHorns(ctx, origin, s, c, anim, dna.hornsVariant!),
+        draw: (ctx, origin, s, c, anim) => drawHorns(ctx, origin, s, c, anim, hornsVariant),
       });
     }
 
@@ -336,10 +345,10 @@ export class CritterAssembler {
       id: 'eyes',
       type: 'eyes',
       name: 'Eyes',
-      variant: dna.eyesVariant,
+      variant: eyesVariant,
       zIndex: 35,
       jointAnchor: headSocket,
-      draw: (ctx, origin, s, c, anim) => drawEyes(ctx, origin, s, c, anim, dna.eyesVariant),
+      draw: (ctx, origin, s, c, anim) => drawEyes(ctx, origin, s, c, anim, eyesVariant),
     });
 
     // 9. Mouth (Z-Index: 36)
@@ -347,10 +356,10 @@ export class CritterAssembler {
       id: 'mouth',
       type: 'mouth',
       name: 'Mouth',
-      variant: dna.mouthVariant,
+      variant: mouthVariant,
       zIndex: 36,
       jointAnchor: headSocket,
-      draw: (ctx, origin, s, c, anim) => drawMouth(ctx, origin, s, c, anim, dna.mouthVariant),
+      draw: (ctx, origin, s, c, anim) => drawMouth(ctx, origin, s, c, anim, mouthVariant),
     });
 
     return {

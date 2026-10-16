@@ -139,6 +139,18 @@ describe('CritterAssembler Engine', () => {
       }
     });
 
+    it('captures variants at assembly time so subsequent DNA mutations do not affect drawings', () => {
+      const dna = CritterAssembler.getDefaultDNA('fire');
+      dna.wingsVariant = 'bat';
+      const manifest = CritterAssembler.assembleManifest(dna);
+      const wingPart = manifest.parts.find((p) => p.id === 'wing-left')!;
+      expect(wingPart.variant).toBe('bat');
+
+      // Mutate DNA post-assembly
+      dna.wingsVariant = 'feathered';
+      expect(wingPart.variant).toBe('bat');
+    });
+
     it('renders critter without error via renderCritter', () => {
       const dna = CritterAssembler.generateRandomDNA('grass');
       const manifest = CritterAssembler.assembleManifest(dna);
