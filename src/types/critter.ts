@@ -24,6 +24,13 @@ export interface JointPoint {
   y: number;
 }
 
+export interface CritterAnimationState {
+  bob: number;
+  breath: number;
+  sway: number;
+  flap: number;
+}
+
 export interface CritterPart {
   id: string;
   type: CritterPartType;
@@ -38,7 +45,7 @@ export interface CritterPart {
     origin: JointPoint,
     scale: number,
     colors: AffinityColors,
-    animationFactor: { bob: number; breath: number; sway: number; flap: number }
+    animationFactor: CritterAnimationState
   ) => void;
 }
 

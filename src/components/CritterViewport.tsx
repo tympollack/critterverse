@@ -69,11 +69,54 @@ export const CritterViewport: React.FC<CritterViewportProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animFrameRef = useRef<number | null>(null);
+  const exportButtonRef = useRef<HTMLButtonElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const modalRef = useRef<HTMLDivElement | null>(null);
 
   const [activeCritter, setActiveCritter] = useState<CritterDNA>(initialCritter);
   const [parentCritter, setParentCritter] = useState<CritterDNA | null>(null);
   const [exportedImage, setExportedImage] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+
+  // Focus management and Escape key handling for accessible dialog
+  useEffect(() => {
+    if (!exportedImage) return;
+
+    const prevActiveElement = document.activeElement as HTMLElement | null;
+    closeButtonRef.current?.focus();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setExportedImage(null);
+        return;
+      }
+
+      if (e.key === 'Tab' && modalRef.current) {
+        const focusable = modalRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      prevActiveElement?.focus();
+    };
+  }, [exportedImage]);
 
   // Memoize assembled manifest across DNA changes to avoid rebuilding 60fps
   const manifest = useMemo(() => {
@@ -271,6 +314,7 @@ export const CritterViewport: React.FC<CritterViewportProps> = ({
               Ready to export creature into 2D trading card raster format.
             </span>
             <button
+              ref={exportButtonRef}
               onClick={handleExportCard}
               disabled={isExporting}
               className="flex items-center gap-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow-md transition"
@@ -395,16 +439,32 @@ export const CritterViewport: React.FC<CritterViewportProps> = ({
 
       {/* Export Preview Modal */}
       {exportedImage && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-5 flex flex-col gap-4 shadow-2xl">
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setExportedImage(null);
+          }}
+        >
+          <div
+            ref={modalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="export-preview-title"
+            className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-5 flex flex-col gap-4 shadow-2xl"
+          >
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <h3
+                id="export-preview-title"
+                className="text-base font-bold text-white flex items-center gap-2"
+              >
                 <Sparkles className="w-4 h-4 text-emerald-400" />
                 2D Card Generated
               </h3>
               <button
+                ref={closeButtonRef}
                 onClick={() => setExportedImage(null)}
-                className="text-slate-400 hover:text-white text-sm"
+                className="text-slate-400 hover:text-white text-sm p-1 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                aria-label="Close dialog"
               >
                 ✕
               </button>
@@ -417,7 +477,7 @@ export const CritterViewport: React.FC<CritterViewportProps> = ({
             />
             <button
               onClick={() => setExportedImage(null)}
-              className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold rounded-lg transition"
+              className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold rounded-lg transition focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
               Close Preview
             </button>
