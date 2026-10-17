@@ -1,0 +1,394 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  CritterAssembler,
+  AFFINITY_COLOR_SCHEMES,
+  DEFAULT_CRITTER_DNA,
+} from '../src/engine/CritterAssembler';
+import {
+  CritterDNA,
+  ElementalAffinity,
+} from '../src/types/critter';
+
+describe('CritterAssembler Engine', () => {
+  describe('getDefaultDNA', () => {
+    it('returns a deterministic initial DNA to prevent hydration mismatches', () => {
+      const dna1 = CritterAssembler.getDefaultDNA('fire');
+      const dna2 = CritterAssembler.getDefaultDNA('fire');
+
+      expect(dna1).toEqual(dna2);
+      expect(dna1.id).toBe(DEFAULT_CRITTER_DNA.id);
+      expect(dna1.speciesName).toBe('Pyrofang');
+      expect(dna1.affinity).toBe('fire');
+      expect(dna1.stats.hp).toBe(85);
+      expect(dna1.bodyVariant).toBe('chubby');
+      expect(dna1.headVariant).toBe('round');
+    });
+
+    it('returns deterministic DNA for non-fire affinities', () => {
+      const waterDNA = CritterAssembler.getDefaultDNA('water');
+      expect(waterDNA.affinity).toBe('water');
+      expect(waterDNA.speciesName).toBe('Aquafang');
+    });
+
+    it('returns an isolated copy of stats so mutating one default does not affect subsequent defaults', () => {
+      const dna1 = CritterAssembler.getDefaultDNA('fire');
+      dna1.stats.hp = 999;
+
+      const dna2 = CritterAssembler.getDefaultDNA('fire');
+      expect(dna2.stats.hp).toBe(85);
+
+      const waterDna = CritterAssembler.getDefaultDNA('water');
+      expect(waterDna.stats.hp).toBe(85);
+    });
+  });
+
+  describe('generateRandomDNA', () => {
+    it('creates a complete DNA manifest with valid attributes', () => {
+      const dna = CritterAssembler.generateRandomDNA('fire');
+
+      expect(dna.id).toBeDefined();
+      expect(dna.affinity).toBe('fire');
+      expect(dna.speciesName).toBeDefined();
+      expect(dna.generation).toBe(1);
+      expect(dna.scale).toBe(1.0);
+
+      // Verify stats
+      expect(dna.stats.hp).toBeGreaterThanOrEqual(60);
+      expect(dna.stats.attack).toBeGreaterThanOrEqual(45);
+      expect(dna.stats.defense).toBeGreaterThanOrEqual(40);
+      expect(dna.stats.speed).toBeGreaterThanOrEqual(50);
+    });
+
+    it('generates critters for all four elemental affinities', () => {
+      const affinities: ElementalAffinity[] = ['fire', 'water', 'grass', 'shadow'];
+
+      for (const aff of affinities) {
+        const dna = CritterAssembler.generateRandomDNA(aff);
+        expect(dna.affinity).toBe(aff);
+        expect(AFFINITY_COLOR_SCHEMES[aff]).toBeDefined();
+        expect(AFFINITY_COLOR_SCHEMES[aff].primary).toBeDefined();
+        expect(AFFINITY_COLOR_SCHEMES[aff].secondary).toBeDefined();
+      }
+    });
+  });
+
+  describe('spliceDNA', () => {
+    it('combines traits from two parent critters into a hybrid offspring', () => {
+      const parentA = CritterAssembler.generateRandomDNA('fire');
+      const parentB = CritterAssembler.generateRandomDNA('water');
+
+      const offspring = CritterAssembler.spliceDNA(parentA, parentB);
+
+      expect(offspring.id).toMatch(/^spliced-/);
+      expect(offspring.generation).toBe(2);
+      expect(['fire', 'water']).toContain(offspring.affinity);
+      expect(offspring.speciesName.length).toBeGreaterThan(2);
+
+      // Verify spliced stats fall in sensible ranges
+      expect(offspring.stats.hp).toBeGreaterThan(0);
+      expect(offspring.stats.attack).toBeGreaterThan(0);
+      expect(offspring.stats.defense).toBeGreaterThan(0);
+      expect(offspring.stats.speed).toBeGreaterThan(0);
+    });
+  });
+
+  describe('assembleManifest', () => {
+    it('constructs parts with verified joint socket alignment without missing sockets', () => {
+      const dna: CritterDNA = {
+        id: 'test-critter-1',
+        speciesName: 'Pyrofang',
+        affinity: 'fire',
+        bodyVariant: 'beast',
+        headVariant: 'draconic',
+        limbsVariant: 'claws',
+        wingsVariant: 'dragon',
+        hornsVariant: 'curved',
+        tailVariant: 'demon',
+        eyesVariant: 'focused',
+        mouthVariant: 'fang',
+        scale: 1.0,
+        generation: 1,
+        stats: { hp: 100, attack: 80, defense: 70, speed: 65 },
+      };
+
+      const origin = { x: 200, y: 220 };
+      const manifest = CritterAssembler.assembleManifest(dna, origin);
+
+      expect(manifest.dna).toBe(dna);
+      expect(manifest.sockets.root).toEqual(origin);
+      expect(manifest.sockets.head.y).toBeLessThan(origin.y);
+      expect(manifest.sockets.leftArm.x).toBeLessThan(origin.x);
+      expect(manifest.sockets.rightArm.x).toBeGreaterThan(origin.x);
+      expect(manifest.sockets.leftLeg.y).toBeGreaterThan(origin.y);
+      expect(manifest.sockets.rightLeg.y).toBeGreaterThan(origin.y);
+
+      // All parts are mapped
+      const partTypes = manifest.parts.map((p) => p.type);
+      expect(partTypes).toContain('body');
+      expect(partTypes).toContain('head');
+      expect(partTypes).toContain('limbs');
+      expect(partTypes).toContain('wings');
+      expect(partTypes).toContain('horns');
+      expect(partTypes).toContain('tail');
+      expect(partTypes).toContain('eyes');
+      expect(partTypes).toContain('mouth');
+
+      // Verify parts are sorted by zIndex
+      for (let i = 1; i < manifest.parts.length; i++) {
+        expect(manifest.parts[i].zIndex).toBeGreaterThanOrEqual(manifest.parts[i - 1].zIndex);
+      }
+    });
+
+    it('captures variants at assembly time so subsequent DNA mutations do not affect drawings', () => {
+      const dna = CritterAssembler.getDefaultDNA('fire');
+      dna.wingsVariant = 'bat';
+      const manifest = CritterAssembler.assembleManifest(dna);
+      const wingPart = manifest.parts.find((p) => p.id === 'wing-left')!;
+      expect(wingPart.variant).toBe('bat');
+
+      // Mutate DNA post-assembly
+      dna.wingsVariant = 'feathered';
+      expect(wingPart.variant).toBe('bat');
+    });
+
+    it('renders critter without error via renderCritter', () => {
+      const dna = CritterAssembler.generateRandomDNA('grass');
+      const manifest = CritterAssembler.assembleManifest(dna);
+
+      // Mock canvas rendering context
+      const mockCtx = {
+        save: vi.fn(),
+        restore: vi.fn(),
+        translate: vi.fn(),
+        rotate: vi.fn(),
+        scale: vi.fn(),
+        beginPath: vi.fn(),
+        moveTo: vi.fn(),
+        lineTo: vi.fn(),
+        bezierCurveTo: vi.fn(),
+        quadraticCurveTo: vi.fn(),
+        arc: vi.fn(),
+        ellipse: vi.fn(),
+        rect: vi.fn(),
+        closePath: vi.fn(),
+        fill: vi.fn(),
+        stroke: vi.fn(),
+        fillRect: vi.fn(),
+        strokeRect: vi.fn(),
+        fillText: vi.fn(),
+        createRadialGradient: vi.fn().mockReturnValue({
+          addColorStop: vi.fn(),
+        }),
+        createLinearGradient: vi.fn().mockReturnValue({
+          addColorStop: vi.fn(),
+        }),
+        fillStyle: '',
+        strokeStyle: '',
+        lineWidth: 1,
+        lineCap: 'round',
+      } as unknown as CanvasRenderingContext2D;
+
+      expect(() => {
+        CritterAssembler.renderCritter(mockCtx, manifest, 1500);
+      }).not.toThrow();
+
+      expect(mockCtx.beginPath).toHaveBeenCalled();
+      expect(mockCtx.fill).toHaveBeenCalled();
+    });
+
+    it('renders all distinct body, head, limb, wing, horn, tail, eye, and mouth variants without errors', () => {
+      const bodyVariants = ['chubby', 'beast', 'serpentine', 'compact'];
+      const headVariants = ['round', 'draconic', 'feline', 'avian'];
+      const limbVariants = ['paws', 'claws', 'hooves', 'fins'];
+      const wingVariants = ['dragon', 'feathered', 'bat'];
+      const hornVariants = ['curved', 'ram', 'crown'];
+      const tailVariants = ['fluffy', 'whip', 'demon'];
+      const eyeVariants = ['focused', 'wide', 'mystic', 'cute'];
+      const mouthVariants = ['fang', 'smile', 'neutral', 'beak'];
+
+      const mockCtx = {
+        save: vi.fn(),
+        restore: vi.fn(),
+        translate: vi.fn(),
+        rotate: vi.fn(),
+        scale: vi.fn(),
+        beginPath: vi.fn(),
+        moveTo: vi.fn(),
+        lineTo: vi.fn(),
+        bezierCurveTo: vi.fn(),
+        quadraticCurveTo: vi.fn(),
+        arc: vi.fn(),
+        ellipse: vi.fn(),
+        rect: vi.fn(),
+        closePath: vi.fn(),
+        fill: vi.fn(),
+        stroke: vi.fn(),
+        createRadialGradient: vi.fn().mockReturnValue({ addColorStop: vi.fn() }),
+        fillStyle: '',
+        strokeStyle: '',
+        lineWidth: 1,
+        lineCap: 'round',
+      } as unknown as CanvasRenderingContext2D;
+
+      // Verify each variant attaches properly to parts and renders cleanly
+      for (const b of bodyVariants) {
+        const dna: CritterDNA = { ...DEFAULT_CRITTER_DNA, bodyVariant: b };
+        const manifest = CritterAssembler.assembleManifest(dna);
+        const bodyPart = manifest.parts.find((p) => p.type === 'body');
+        expect(bodyPart?.variant).toBe(b);
+        expect(() => CritterAssembler.renderCritter(mockCtx, manifest, 100)).not.toThrow();
+      }
+
+      for (const h of headVariants) {
+        const dna: CritterDNA = { ...DEFAULT_CRITTER_DNA, headVariant: h };
+        const manifest = CritterAssembler.assembleManifest(dna);
+        const headPart = manifest.parts.find((p) => p.type === 'head');
+        expect(headPart?.variant).toBe(h);
+        expect(() => CritterAssembler.renderCritter(mockCtx, manifest, 100)).not.toThrow();
+      }
+
+      for (const l of limbVariants) {
+        const dna: CritterDNA = { ...DEFAULT_CRITTER_DNA, limbsVariant: l };
+        const manifest = CritterAssembler.assembleManifest(dna);
+        const legPart = manifest.parts.find((p) => p.id === 'leg-left');
+        const armPart = manifest.parts.find((p) => p.id === 'arm-left');
+        expect(legPart?.variant).toBe(l);
+        expect(armPart?.variant).toBe(l);
+        expect(() => CritterAssembler.renderCritter(mockCtx, manifest, 100)).not.toThrow();
+      }
+
+      for (const w of wingVariants) {
+        const dna: CritterDNA = { ...DEFAULT_CRITTER_DNA, wingsVariant: w };
+        const manifest = CritterAssembler.assembleManifest(dna);
+        const wingPart = manifest.parts.find((p) => p.id === 'wing-left');
+        expect(wingPart?.variant).toBe(w);
+        expect(() => CritterAssembler.renderCritter(mockCtx, manifest, 100)).not.toThrow();
+      }
+
+      for (const hr of hornVariants) {
+        const dna: CritterDNA = { ...DEFAULT_CRITTER_DNA, hornsVariant: hr };
+        const manifest = CritterAssembler.assembleManifest(dna);
+        const hornPart = manifest.parts.find((p) => p.type === 'horns');
+        expect(hornPart?.variant).toBe(hr);
+        expect(() => CritterAssembler.renderCritter(mockCtx, manifest, 100)).not.toThrow();
+      }
+
+      for (const t of tailVariants) {
+        const dna: CritterDNA = { ...DEFAULT_CRITTER_DNA, tailVariant: t };
+        const manifest = CritterAssembler.assembleManifest(dna);
+        const tailPart = manifest.parts.find((p) => p.type === 'tail');
+        expect(tailPart?.variant).toBe(t);
+        expect(() => CritterAssembler.renderCritter(mockCtx, manifest, 100)).not.toThrow();
+      }
+
+      for (const e of eyeVariants) {
+        const dna: CritterDNA = { ...DEFAULT_CRITTER_DNA, eyesVariant: e };
+        const manifest = CritterAssembler.assembleManifest(dna);
+        const eyePart = manifest.parts.find((p) => p.type === 'eyes');
+        expect(eyePart?.variant).toBe(e);
+        expect(() => CritterAssembler.renderCritter(mockCtx, manifest, 100)).not.toThrow();
+      }
+
+      for (const m of mouthVariants) {
+        const dna: CritterDNA = { ...DEFAULT_CRITTER_DNA, mouthVariant: m };
+        const manifest = CritterAssembler.assembleManifest(dna);
+        const mouthPart = manifest.parts.find((p) => p.type === 'mouth');
+        expect(mouthPart?.variant).toBe(m);
+        expect(() => CritterAssembler.renderCritter(mockCtx, manifest, 100)).not.toThrow();
+      }
+    });
+
+    it('applies anim.bob vertical translation in drawLeg to prevent leg detachment during idle bobbing', () => {
+      const dna = CritterAssembler.getDefaultDNA('fire');
+      const manifest = CritterAssembler.assembleManifest(dna);
+      const legPart = manifest.parts.find((p) => p.id === 'leg-left');
+      expect(legPart).toBeDefined();
+
+      const mockCtx = {
+        save: vi.fn(),
+        restore: vi.fn(),
+        translate: vi.fn(),
+        beginPath: vi.fn(),
+        ellipse: vi.fn(),
+        arc: vi.fn(),
+        fill: vi.fn(),
+        stroke: vi.fn(),
+      } as unknown as CanvasRenderingContext2D;
+
+      const anim = { bob: 8.5, breath: 0, sway: 0, flap: 0 };
+      legPart!.draw(mockCtx, legPart!.jointAnchor, 1.0, manifest.colors, anim);
+
+      // Verify translation included anim.bob
+      expect(mockCtx.translate).toHaveBeenCalledWith(
+        legPart!.jointAnchor.x,
+        legPart!.jointAnchor.y + 8.5
+      );
+    });
+  });
+
+  describe('exportToCardThumbnail', () => {
+    let mockContext: Record<string, any>;
+
+    beforeEach(() => {
+      mockContext = {
+        save: vi.fn(),
+        restore: vi.fn(),
+        translate: vi.fn(),
+        rotate: vi.fn(),
+        scale: vi.fn(),
+        beginPath: vi.fn(),
+        moveTo: vi.fn(),
+        lineTo: vi.fn(),
+        bezierCurveTo: vi.fn(),
+        quadraticCurveTo: vi.fn(),
+        arc: vi.fn(),
+        ellipse: vi.fn(),
+        rect: vi.fn(),
+        clip: vi.fn(),
+        closePath: vi.fn(),
+        fill: vi.fn(),
+        stroke: vi.fn(),
+        fillRect: vi.fn(),
+        strokeRect: vi.fn(),
+        fillText: vi.fn(),
+        createRadialGradient: vi.fn().mockReturnValue({
+          addColorStop: vi.fn(),
+        }),
+        createLinearGradient: vi.fn().mockReturnValue({
+          addColorStop: vi.fn(),
+        }),
+      };
+
+      // Mock global document if running in node environment
+      const mockCanvas = {
+        width: 400,
+        height: 560,
+        getContext: vi.fn().mockReturnValue(mockContext),
+        toDataURL: vi.fn().mockReturnValue('data:image/png;base64,MOCK_IMAGE_DATA'),
+      };
+
+      if (typeof global.document === 'undefined') {
+        // @ts-expect-error mock document
+        global.document = {
+          createElement: vi.fn().mockReturnValue(mockCanvas),
+        };
+      } else {
+        vi.spyOn(document, 'createElement').mockReturnValue(mockCanvas as unknown as HTMLElement);
+      }
+    });
+
+    it('generates a 2D card thumbnail image data URL', async () => {
+      const dna = CritterAssembler.generateRandomDNA('shadow');
+      const thumbnail = await CritterAssembler.exportToCardThumbnail(dna);
+
+      expect(thumbnail).toMatch(/^data:image\/png;base64,/);
+    });
+
+    it('clips portrait frame to prevent creature drawing bleed outside card boundary', async () => {
+      const dna = CritterAssembler.getDefaultDNA('fire');
+      await CritterAssembler.exportToCardThumbnail(dna);
+
+      expect(mockContext.clip).toHaveBeenCalled();
+    });
+  });
+});

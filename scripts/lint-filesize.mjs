@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT_DIR = process.cwd();
-const SCAN_DIRS = ['app', 'components', 'lib', 'hooks'];
+const SCAN_DIRS = ['src', 'app', 'components', 'lib', 'hooks'];
 
 // Grandfathered file size limits (ratchet mechanism).
 // Files here are strictly capped at their legacy size and must NOT grow larger.
