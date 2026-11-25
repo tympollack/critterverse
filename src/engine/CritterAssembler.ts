@@ -20,6 +20,7 @@ import {
   drawEyes,
   drawMouth,
 } from './faceDrawers';
+import { resolveCritterPartAsset } from './assetManifest';
 
 export const AFFINITY_COLOR_SCHEMES: Record<ElementalAffinity, AffinityColors> = {
   fire: {
@@ -362,9 +363,20 @@ export class CritterAssembler {
       draw: (ctx, origin, s, c, anim) => drawMouth(ctx, origin, s, c, anim, mouthVariant),
     });
 
+    const resolvedParts = parts
+      .sort((a, b) => a.zIndex - b.zIndex)
+      .map((part) => {
+        const asset = resolveCritterPartAsset(part.type, part.variant, dna.affinity);
+        return {
+          ...part,
+          assetKey: asset.assetKey,
+          cdnUrl: asset.cdnUrl,
+        };
+      });
+
     return {
       dna,
-      parts: parts.sort((a, b) => a.zIndex - b.zIndex),
+      parts: resolvedParts,
       colors,
       sockets: {
         root: rootSocket,

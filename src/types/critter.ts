@@ -38,6 +38,8 @@ export interface CritterPart {
   variant: string;
   zIndex: number;
   jointAnchor: JointPoint;
+  assetKey?: string;
+  cdnUrl?: string;
   scale?: number;
   rotation?: number;
   draw: (
