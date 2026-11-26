@@ -394,12 +394,88 @@ export class CritterAssembler {
   }
 
   /**
-   * Renders the composite creature to an HTML5 canvas with elemental affinity shaders
+   * Cached CDN sprite elements keyed by resolved URL.
+   */
+  private static readonly spriteCache = new Map<string, HTMLImageElement | 'loading' | 'error'>();
+  private static readonly pendingSpriteLoads = new Map<string, Promise<HTMLImageElement | null>>();
+
+  public static registerCachedSpriteForTest(url: string, sprite: HTMLImageElement): void {
+    this.spriteCache.set(url, sprite);
+  }
+
+  public static clearSpriteCacheForTest(): void {
+    this.spriteCache.clear();
+    this.pendingSpriteLoads.clear();
+  }
+
+  public static loadPartSprite(url: string): Promise<HTMLImageElement | null> {
+    if (!url || typeof Image === 'undefined') {
+      return Promise.resolve(null);
+    }
+    const cached = this.spriteCache.get(url);
+    if (cached && cached !== 'loading' && cached !== 'error') {
+      return Promise.resolve(cached);
+    }
+    if (cached === 'error') {
+      return Promise.resolve(null);
+    }
+    const existingPromise = this.pendingSpriteLoads.get(url);
+    if (existingPromise) {
+      return existingPromise;
+    }
+
+    this.spriteCache.set(url, 'loading');
+    const promise = new Promise<HTMLImageElement | null>((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        this.spriteCache.set(url, img);
+        this.pendingSpriteLoads.delete(url);
+        resolve(img);
+      };
+      img.onerror = () => {
+        this.spriteCache.set(url, 'error');
+        this.pendingSpriteLoads.delete(url);
+        resolve(null);
+      };
+      img.src = url;
+    });
+    this.pendingSpriteLoads.set(url, promise);
+    return promise;
+  }
+
+  private static getSpriteDrawSize(partType: CritterPart['type'], scale: number): number {
+    switch (partType) {
+      case 'body':
+        return 112 * scale;
+      case 'head':
+        return 78 * scale;
+      case 'wings':
+        return 74 * scale;
+      case 'limbs':
+        return 46 * scale;
+      case 'tail':
+        return 58 * scale;
+      case 'horns':
+        return 44 * scale;
+      case 'eyes':
+        return 34 * scale;
+      case 'mouth':
+        return 28 * scale;
+      default:
+        return 64 * scale;
+    }
+  }
+
+  /**
+   * Renders the composite creature to an HTML5 canvas with elemental affinity shaders,
+   * drawing loaded CDN sprites when available and falling back to procedural parts.
    */
   public static renderCritter(
     ctx: CanvasRenderingContext2D,
     manifest: CritterManifest,
-    timeMs: number
+    timeMs: number,
+    options?: { skipSprites?: boolean }
   ): void {
     const timeSec = timeMs * 0.001;
 
@@ -428,8 +504,28 @@ export class CritterAssembler {
     ctx.arc(root.x, root.y + anim.bob, 120 * manifest.dna.scale, 0, Math.PI * 2);
     ctx.fill();
 
-    // Render ordered parts
+    // Render ordered parts (CDN sprite first if ready, procedural fallback otherwise)
     for (const part of manifest.parts) {
+      if (!options?.skipSprites && part.cdnUrl) {
+        const cached = this.spriteCache.get(part.cdnUrl);
+        if (cached && cached !== 'loading' && cached !== 'error') {
+          const drawSize = this.getSpriteDrawSize(part.type, manifest.dna.scale);
+          ctx.save();
+          ctx.translate(part.jointAnchor.x, part.jointAnchor.y + anim.bob);
+          ctx.drawImage(
+            cached,
+            -drawSize / 2,
+            -drawSize / 2,
+            drawSize,
+            drawSize
+          );
+          ctx.restore();
+          continue;
+        }
+        if (!cached) {
+          void this.loadPartSprite(part.cdnUrl);
+        }
+      }
       part.draw(ctx, part.jointAnchor, manifest.dna.scale, manifest.colors, anim);
     }
   }
@@ -442,100 +538,113 @@ export class CritterAssembler {
     width = 400,
     height = 560
   ): Promise<string> {
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Failed to get 2D canvas context');
+    const drawCard = async (skipSprites: boolean): Promise<string> => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Failed to get 2D canvas context');
 
-    const colors = AFFINITY_COLOR_SCHEMES[dna.affinity];
+      const colors = AFFINITY_COLOR_SCHEMES[dna.affinity];
 
-    // 1. Card Background & Outer Frame
-    const bgGradient = ctx.createLinearGradient(0, 0, width, height);
-    bgGradient.addColorStop(0, '#090d16');
-    bgGradient.addColorStop(0.5, '#0f172a');
-    bgGradient.addColorStop(1, colors.dark);
-    ctx.fillStyle = bgGradient;
-    ctx.fillRect(0, 0, width, height);
+      // 1. Card Background & Outer Frame
+      const bgGradient = ctx.createLinearGradient(0, 0, width, height);
+      bgGradient.addColorStop(0, '#090d16');
+      bgGradient.addColorStop(0.5, '#0f172a');
+      bgGradient.addColorStop(1, colors.dark);
+      ctx.fillStyle = bgGradient;
+      ctx.fillRect(0, 0, width, height);
 
-    // Beveled Border
-    ctx.strokeStyle = colors.primary;
-    ctx.lineWidth = 8;
-    ctx.strokeRect(6, 6, width - 12, height - 12);
+      // Beveled Border
+      ctx.strokeStyle = colors.primary;
+      ctx.lineWidth = 8;
+      ctx.strokeRect(6, 6, width - 12, height - 12);
 
-    ctx.strokeStyle = colors.highlight;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(12, 12, width - 24, height - 24);
+      ctx.strokeStyle = colors.highlight;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(12, 12, width - 24, height - 24);
 
-    // 2. Creature Portrait Frame
-    const portraitW = width - 48;
-    const portraitH = height * 0.55;
-    ctx.fillStyle = '#020617';
-    ctx.fillRect(24, 60, portraitW, portraitH);
-    ctx.strokeStyle = colors.accent;
-    ctx.lineWidth = 3;
-    ctx.strokeRect(24, 60, portraitW, portraitH);
+      // 2. Creature Portrait Frame
+      const portraitW = width - 48;
+      const portraitH = height * 0.55;
+      ctx.fillStyle = '#020617';
+      ctx.fillRect(24, 60, portraitW, portraitH);
+      ctx.strokeStyle = colors.accent;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(24, 60, portraitW, portraitH);
 
-    // Clip rendering to portrait frame so oversized parts don't bleed onto card text
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(24, 60, portraitW, portraitH);
-    ctx.clip();
+      // Clip rendering to portrait frame so oversized parts don't bleed onto card text
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(24, 60, portraitW, portraitH);
+      ctx.clip();
 
-    // Render Critter in center of portrait
-    const manifest = this.assembleManifest(dna, {
-      x: width / 2,
-      y: 60 + portraitH * 0.55,
-    });
-    this.renderCritter(ctx, manifest, 0);
-    ctx.restore();
+      // Render Critter in center of portrait
+      const manifest = this.assembleManifest(dna, {
+        x: width / 2,
+        y: 60 + portraitH * 0.55,
+      });
+      if (!skipSprites) {
+        await Promise.all(
+          manifest.parts.map((part) =>
+            part.cdnUrl ? this.loadPartSprite(part.cdnUrl) : Promise.resolve(null)
+          )
+        );
+      }
+      this.renderCritter(ctx, manifest, 0, { skipSprites });
+      ctx.restore();
 
-    // 3. Header: Species Name & Affinity Badge
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '900 22px system-ui, sans-serif';
-    ctx.fillText(dna.speciesName.toUpperCase(), 28, 42);
+      // 3. Header: Species Name & Affinity Badge
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '900 22px system-ui, sans-serif';
+      ctx.fillText(dna.speciesName.toUpperCase(), 28, 42);
 
-    ctx.fillStyle = colors.primary;
-    ctx.font = '800 13px system-ui, sans-serif';
-    ctx.fillText(`[${dna.affinity.toUpperCase()}]`, width - 110, 42);
+      ctx.fillStyle = colors.primary;
+      ctx.font = '800 13px system-ui, sans-serif';
+      ctx.fillText(`[${dna.affinity.toUpperCase()}]`, width - 110, 42);
 
-    // 4. Stats Summary Area
-    const statY = 60 + portraitH + 28;
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '600 13px system-ui, sans-serif';
-    ctx.fillText(`GEN ${dna.generation} HYBRID`, 28, statY);
+      // 4. Stats Summary Area
+      const statY = 60 + portraitH + 28;
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '600 13px system-ui, sans-serif';
+      ctx.fillText(`GEN ${dna.generation} HYBRID`, 28, statY);
 
-    const drawStatBar = (
-      label: string,
-      val: number,
-      y: number,
-      barColor: string
-    ) => {
-      ctx.fillStyle = '#cbd5e1';
-      ctx.font = 'bold 12px monospace';
-      ctx.fillText(label, 28, y);
-      ctx.fillText(`${val}`, 85, y);
+      const drawStatBar = (
+        label: string,
+        val: number,
+        y: number,
+        barColor: string
+      ) => {
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = 'bold 12px monospace';
+        ctx.fillText(label, 28, y);
+        ctx.fillText(`${val}`, 85, y);
 
-      // Bar container
-      ctx.fillStyle = '#1e293b';
-      ctx.fillRect(115, y - 10, width - 150, 12);
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(115, y - 10, width - 150, 12);
 
-      // Bar fill
-      ctx.fillStyle = barColor;
-      const fillW = Math.min((val / 120) * (width - 150), width - 150);
-      ctx.fillRect(115, y - 10, fillW, 12);
+        ctx.fillStyle = barColor;
+        const fillW = Math.min((val / 120) * (width - 150), width - 150);
+        ctx.fillRect(115, y - 10, fillW, 12);
+      };
+
+      drawStatBar('HP', dna.stats.hp, statY + 28, '#10b981');
+      drawStatBar('ATK', dna.stats.attack, statY + 48, '#ef4444');
+      drawStatBar('DEF', dna.stats.defense, statY + 68, '#3b82f6');
+      drawStatBar('SPD', dna.stats.speed, statY + 88, '#f59e0b');
+
+      // 5. SunShade Ecosystem Card Watermark
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.font = '10px monospace';
+      ctx.fillText('SUNSHADE CRITTERVERSE © 2026', 28, height - 20);
+
+      return canvas.toDataURL('image/png');
     };
 
-    drawStatBar('HP', dna.stats.hp, statY + 28, '#10b981');
-    drawStatBar('ATK', dna.stats.attack, statY + 48, '#ef4444');
-    drawStatBar('DEF', dna.stats.defense, statY + 68, '#3b82f6');
-    drawStatBar('SPD', dna.stats.speed, statY + 88, '#f59e0b');
-
-    // 5. SunShade Ecosystem Card Watermark
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-    ctx.font = '10px monospace';
-    ctx.fillText('SUNSHADE CRITTERVERSE © 2026', 28, height - 20);
-
-    return canvas.toDataURL('image/png');
+    try {
+      return await drawCard(false);
+    } catch {
+      return await drawCard(true);
+    }
   }
 }

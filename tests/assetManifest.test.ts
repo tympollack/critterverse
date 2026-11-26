@@ -52,6 +52,10 @@ describe('TASK-PKG-APP-CRITTER: @digitalcanopy/assets Modular Splicer & Tint Ada
     });
 
     assetRegistry.registerPackOverride('critters', 'https://custom-ip.sunshade.icu/critters');
+    const headAfterPackSwap = resolveCritterPartAsset('head', 'round', 'fire');
+    expect(headAfterPackSwap.cdnUrl).toBe(
+      'https://custom-ip.sunshade.icu/critters/parts/head_fuzzy_orange.png',
+    );
     const eyes = resolveCritterPartAsset('eyes', 'focused', 'fire');
     expect(eyes.cdnUrl).toBe('https://custom-ip.sunshade.icu/critters/parts/eyes_focused.png');
 
@@ -62,9 +66,51 @@ describe('TASK-PKG-APP-CRITTER: @digitalcanopy/assets Modular Splicer & Tint Ada
     const bodyManifest = CritterAssembler.assembleManifest(DEFAULT_CRITTER_DNA);
     const bodyPart = bodyManifest.parts.find((p) => p.type === 'body');
     expect(bodyPart?.cdnUrl).toBe('https://custom-ip.sunshade.icu/chubby-dragon.png');
-    expect(resolveCritterFrameAsset('panel-metal').atlasFrame).toBeDefined();
+    const frameAsset = resolveCritterFrameAsset('panel-metal');
+    expect(frameAsset.atlasFrame).toBeDefined();
+    expect(frameAsset.atlasUrl).toContain('ui-sprites-atlas.png');
     expect(swaps).toBeGreaterThanOrEqual(2);
 
     unsub();
+  });
+
+  it('draws cached CDN sprites in CritterAssembler.renderCritter and falls back when uncached', async () => {
+    CritterAssembler.clearSpriteCacheForTest();
+    await hydrateCritterAssetCatalog(undefined, true);
+    const manifest = CritterAssembler.assembleManifest(DEFAULT_CRITTER_DNA);
+    const headPart = manifest.parts.find((p) => p.type === 'head')!;
+
+    const drawImageCalls: Array<{ img: unknown; dx: number; dy: number }> = [];
+    const fakeCtx = {
+      createRadialGradient: () => ({ addColorStop: () => {} }),
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 1,
+      beginPath: () => {},
+      arc: () => {},
+      moveTo: () => {},
+      lineTo: () => {},
+      quadraticCurveTo: () => {},
+      bezierCurveTo: () => {},
+      ellipse: () => {},
+      closePath: () => {},
+      fill: () => {},
+      stroke: () => {},
+      save: () => {},
+      restore: () => {},
+      translate: () => {},
+      rotate: () => {},
+      scale: () => {},
+      drawImage: (img: unknown, dx: number, dy: number) => {
+        drawImageCalls.push({ img, dx, dy });
+      },
+    } as unknown as CanvasRenderingContext2D;
+
+    const fakeSprite = { width: 128, height: 128 } as HTMLImageElement;
+    CritterAssembler.registerCachedSpriteForTest(headPart.cdnUrl!, fakeSprite);
+    CritterAssembler.renderCritter(fakeCtx, manifest, 0);
+
+    expect(drawImageCalls.some((c) => c.img === fakeSprite)).toBe(true);
+    CritterAssembler.clearSpriteCacheForTest();
   });
 });
