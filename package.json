@@ -12,6 +12,7 @@
     "lint:filesize": "node scripts/lint-filesize.mjs"
   },
   "dependencies": {
+    "@digitalcanopy/assets": "^1.1.0",
     "lucide-react": "^1.57.0",
     "next": "16.2.10",
     "react": "19.2.4",

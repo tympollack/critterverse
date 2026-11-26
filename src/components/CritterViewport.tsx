@@ -11,6 +11,11 @@ import {
   DEFAULT_CRITTER_DNA,
 } from '../engine/CritterAssembler';
 import {
+  getCritterCdnBase,
+  hydrateCritterAssetCatalog,
+  subscribeCritterAssetSwaps,
+} from '../engine/assetManifest';
+import {
   Flame,
   Droplets,
   Leaf,
@@ -77,6 +82,14 @@ export const CritterViewport: React.FC<CritterViewportProps> = ({
   const [parentCritter, setParentCritter] = useState<CritterDNA | null>(null);
   const [exportedImage, setExportedImage] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [assetSwapRevision, setAssetSwapRevision] = useState(0);
+
+  useEffect(() => {
+    void hydrateCritterAssetCatalog();
+    return subscribeCritterAssetSwaps(() => {
+      setAssetSwapRevision((rev) => rev + 1);
+    });
+  }, []);
 
   // Focus management and Escape key handling for accessible dialog
   useEffect(() => {
@@ -124,7 +137,7 @@ export const CritterViewport: React.FC<CritterViewportProps> = ({
       x: 240, // canvas.width / 2 (480 / 2)
       y: 230, // canvas.height / 2 + 10 (440 / 2 + 10)
     });
-  }, [activeCritter]);
+  }, [activeCritter, assetSwapRevision]);
 
   // Initialize and run the 60fps canvas animation loop
   useEffect(() => {
@@ -281,6 +294,8 @@ export const CritterViewport: React.FC<CritterViewportProps> = ({
               ref={canvasRef}
               width={480}
               height={440}
+              data-asset-scope="critterverse"
+              data-cdn-base={getCritterCdnBase()}
               className="w-full h-auto max-w-full block"
             />
 
